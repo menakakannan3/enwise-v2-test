@@ -1,0 +1,125 @@
+# -------------------------
+# Global Rate-Limit Zones
+# -------------------------
+
+# Limit all API requests to 10 requests per second per IP
+limit_req_zone $binary_remote_addr zone=api_limit:10m rate=10r/s;
+
+# Protect login endpoint – 5 requests per minute per IP
+limit_req_zone $binary_remote_addr zone=login_limit:10m rate=5r/m;
+
+
+# -----------------------------------
+# HTTP → HTTPS Enforced Redirection
+# (Fixes VAPT HTTPS Enforcement issue)
+# -----------------------------------
+server {
+    listen 80;
+    server_name testserver.enwise.in;
+
+    # Redirect all HTTP to HTTPS
+    return 301 https://$host$request_uri;
+}
+
+
+# -----------------------------------
+# MAIN HTTPS SERVER BLOCK
+# -----------------------------------
+server {
+    listen 443 ssl;
+    server_name testserver.enwise.in;
+
+    root /var/www/enwise-frontend/dist;
+    index index.html;
+
+    # SSL certificates from Let's Encrypt
+    ssl_certificate /etc/letsencrypt/live/testserver.enwise.in/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/testserver.enwise.in/privkey.pem;
+
+    # Enforce HTTPS (Strict Transport Security)
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
+
+    # Security and performance options
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
+
+
+    # ---------------------
+    # FRONTEND (React)
+    # ---------------------
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location /assets/ {
+        add_header Cache-Control "public, max-age=31536000, immutable";
+        try_files $uri =404;
+    }
+
+
+    # ---------------------
+    # API (FastAPI backend)
+    # ---------------------
+    location /api/ {
+
+        # Apply API request rate limit (DoS protection)
+        limit_req zone=api_limit burst=20 nodelay;
+
+        proxy_pass http://127.0.0.1:8003/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+
+    # ---------------------
+    # LOGIN brute-force protection
+    # ---------------------
+    location = /api/auth/login {
+
+        # Limit logins: max 5 per MINUTE per IP
+        limit_req zone=login_limit burst=3 nodelay;
+
+        proxy_pass http://127.0.0.1:8003/api/auth/login;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+
+    # ---------------------
+    # SOCKET.IO (WebSockets)
+    # ---------------------
+    location /socket.io/ {
+        proxy_pass https://127.0.0.1:8002/socket.io/;
+
+        # WebSocket upgrade
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+
+        # Required for polling
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+        # Optional: allow CORS
+        add_header Access-Control-Allow-Origin * always;
+        add_header Access-Control-Allow-Credentials true always;
+    }
+
+
+    # ---------------------
+    # GZIP Compression
+    # ---------------------
+    gzip on;
+    gzip_types text/plain text/css application/javascript application/json image/svg+xml;
+    gzip_min_length 256;
+
+
+    # ---------------------
+    # LOGGING
+    # ---------------------
+    access_log /var/log/nginx/enwise-frontend.access.log;
+    error_log  /var/log/nginx/enwise-frontend.error.log;
+}
