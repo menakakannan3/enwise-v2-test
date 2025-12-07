@@ -56,13 +56,16 @@ def publish_mqtt(device_uid: str, auth_key: str, payload: dict):
     print(f"📤 MQTT Published to → {topic}")
     return topic, message_json
 
-
-@router.post("/update-calibration")
+@router.post("/update-calibration", tags=["Stations"])
 async def update_station_calibration(
+    user: user_dependency,         
     payload: StationCalibrationUpdate,
     db: Session = Depends(getdb),
-    current_user: dict = Depends(user_dependency)
 ):
+    """
+    Updates calibration window, stores calibration history,
+    and pushes encrypted MQTT message to the device.
+    """
     try:
         calib_from_utc = ist_to_utc(payload.calib_from_ist)
         calib_to_utc = ist_to_utc(payload.calib_to_ist)
@@ -72,9 +75,11 @@ async def update_station_calibration(
         if not station:
             raise HTTPException(status_code=404, detail="station not found")
 
+        # Update calibration window
         station.calib_from_lst = calib_from_utc
         station.calib_to_lst = calib_to_utc
 
+        # Insert history
         history = CalibrationHistory(
             site_id=station.site_id,
             station_id=station.id,
@@ -87,11 +92,13 @@ async def update_station_calibration(
         db.commit()
         db.refresh(station)
 
+        # Device validation
         if not station.devices:
             raise HTTPException(status_code=500, detail="No device mapped to station")
 
         device = station.devices[0]
 
+        # MQTT payload (IST timestamp for device)
         mqtt_payload = {
             "station_uid": station.station_uid,
             "calib_from": calib_from_utc.astimezone(IST_TZ).isoformat(),
@@ -99,7 +106,9 @@ async def update_station_calibration(
         }
 
         topic, encrypted_msg = publish_mqtt(
-            device.device_uid, device.device_authkey, mqtt_payload
+            device.device_uid,
+            device.device_authkey,
+            mqtt_payload,
         )
 
         return {
@@ -112,29 +121,71 @@ async def update_station_calibration(
         db.rollback()
         raise HTTPException(status_code=500, detail="Unexpected error occurred")
 
-
-@router.get("/calibration-info/{station_id}")
+@router.get(
+    "/calibration-info/{station_id}",
+    tags=["Stations"]
+)
 async def get_station_calibration_info(
+    user: user_dependency,     
     station_id: int,
     db: Session = Depends(getdb),
-    current_user: dict = Depends(user_dependency)
 ):
-    try:
-        station = db.query(Station).filter(Station.id == station_id).first()
-        if not station:
-            raise HTTPException(status_code=404, detail="Station not found")
+    """
+    Returns the latest calibration window + ack status for a station.
+    """
 
-        return {
-            "station_id": station.id,
-            "station_uid": station.station_uid,
-            "calib_from_lst": station.calib_from_lst,
-            "calib_to_lst": station.calib_to_lst,
-            "calib_ack": station.calib_ack,
+    station = db.query(Station).filter(Station.id == station_id).first()
+
+    if not station:
+        raise HTTPException(status_code=404, detail="Station not found")
+
+    return {
+        "station_id": station.id,
+        "station_uid": station.station_uid,
+        "calib_from_lst": station.calib_from_lst,
+        "calib_to_lst": station.calib_to_lst,
+        "calib_ack": station.calib_ack,
+    }
+@router.get("/calibration-history/{station_id}", tags=["Stations"])
+async def get_calibration_history(
+    user: user_dependency,         
+    station_id: int,
+    db: Session = Depends(getdb),
+):
+    """
+    Returns calibration history sorted latest-first.
+    """
+
+    station = db.query(Station).filter(Station.id == station_id).first()
+
+    if not station:
+        raise HTTPException(status_code=404, detail="Station not found")
+
+    records = (
+        db.query(CalibrationHistory)
+        .filter(CalibrationHistory.station_id == station_id)
+        .order_by(CalibrationHistory.id.desc())
+        .all()
+    )
+
+    history = [
+        {
+            "id": h.id,
+            "site_id": h.site_id,
+            "station_id": h.station_id,
+            "calib_from": h.calib_from,
+            "calib_to": h.calib_to,
+            "created_at": h.created_at,
         }
+        for h in records
+    ]
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Unexpected error occurred")
-
+    return {
+        "station_id": station.id,
+        "station_uid": station.station_uid,
+        "rows": len(history),
+        "history": history,
+    }
 
 @router.get("/calibration-history/{station_id}")
 async def get_calibration_history(
