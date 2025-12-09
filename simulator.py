@@ -9,8 +9,8 @@ from Crypto.Cipher import AES
 from Crypto.Random import get_random_bytes
 
 # ─── MQTT Config ─────────────────────────────────────────────────────
-MQTT_BROKER = "116.50.93.126"
-MQTT_PORT = 1883  # No username/password
+MQTT_BROKER = "broker.enwise.in"
+MQTT_PORT = 1883
 
 # ─── Timezone ───────────────────────────────────────────────────────
 IST = ZoneInfo("Asia/Kolkata")
@@ -18,7 +18,7 @@ IST = ZoneInfo("Asia/Kolkata")
 # ─── Device Configurations ──────────────────────────────────────────
 DEVICES = [
     {
-        "auth_key": "9887092c204cc9cd4305840cfbe42f44",  # HEX key (16 bytes)
+        "auth_key": "9887092c204cc9cd4305840cfbe42f44",  # ASCII KEY (32 chars)
         "payload": {
             "site_uid": "EW_25263",
             "chipid": "SA_TEST_01SA_TEST_01",
@@ -34,7 +34,7 @@ DEVICES = [
         }
     },
     {
-        "auth_key": "481f852e88107637b0ac6facf56c35d7",
+        "auth_key": "481f852e88107637b0ac6facf56c35d7",  # ASCII KEY (32 chars)
         "payload": {
             "site_uid": "EW_25264",
             "chipid": "SA_TEST_02SA_TEST_02",
@@ -56,19 +56,17 @@ def zero_pad(b: bytes, block_size: int = 16) -> bytes:
     rem = len(b) % block_size
     return b if rem == 0 else b + b"\x00" * (block_size - rem)
 
-def encrypt_payload(payload: dict, key_hex: str):
-    key = bytes.fromhex(key_hex)  # convert hex string → bytes
-    if len(key) not in (16, 24, 32):
-        raise ValueError("Invalid AES key length")
-
+def encrypt_payload(payload: dict, ascii_key: str):
+    key = ascii_key.encode("utf-8")      # IMPORTANT FIX
     iv = get_random_bytes(16)
+
     cipher = AES.new(key, AES.MODE_CBC, iv=iv)
 
     pt = json.dumps(payload, separators=(",", ":")).encode("utf-8")
     pt_padded = zero_pad(pt)
 
     ct = cipher.encrypt(pt_padded)
-    return iv.hex(), ct.hex()
+    return iv.hex().upper(), ct.hex().upper()
 
 # ─── Payload Builder ─────────────────────────────────────────────────
 def build_payload(base):
@@ -76,14 +74,14 @@ def build_payload(base):
         "site_uid": base["site_uid"],
         "chipid": base["chipid"],
         "device_uid": base["device_uid"],
-        "timestamp": datetime.now(IST).isoformat(),
         "QualityCode": "U",
-        "data": [],
+        "timestamp": "",
+        "data": []
     }
 
     for item in base["data"]:
         new_item = dict(item)
-        new_item["value"] = random.randint(1, 1000)
+        new_item["value"] = f"{random.uniform(1, 5000):.3f}"
         payload["data"].append(new_item)
 
     return payload
@@ -95,17 +93,11 @@ def on_connect(client, userdata, flags, rc):
 def on_publish(client, userdata, mid):
     print("✔ Published MID:", mid)
 
-def on_log(client, userdata, level, buf):
-    print("📝 LOG:", buf)
-
 # ─── Main Worker ─────────────────────────────────────────────────────
 def main():
     mqtt_client = mqtt.Client()
-
-    # Attach Logger Callbacks
     mqtt_client.on_connect = on_connect
     mqtt_client.on_publish = on_publish
-    mqtt_client.on_log = on_log
 
     print("Connecting to MQTT...")
     mqtt_client.connect(MQTT_BROKER, MQTT_PORT, keepalive=60)
@@ -117,11 +109,15 @@ def main():
         try:
             for device in DEVICES:
                 base = device["payload"]
-                auth_key = device["auth_key"]
+                ascii_key = device["auth_key"]
                 device_uid = base["device_uid"]
 
                 payload = build_payload(base)
-                iv_hex, ct_hex = encrypt_payload(payload, auth_key)
+
+                now = datetime.now(IST)
+                payload["timestamp"] = now.strftime("%Y-%m-%dT%H:%M:%SZ%z")
+
+                iv_hex, ct_hex = encrypt_payload(payload, ascii_key)
 
                 envelope = {
                     "IV": iv_hex,
@@ -129,15 +125,15 @@ def main():
                 }
 
                 topic = f"{device_uid}_OUT"
+                mqtt_client.publish(topic, json.dumps(envelope))
 
-                result = mqtt_client.publish(topic, json.dumps(envelope))
-
-                print(f"📤 Sent → {topic} | Params={len(payload['data'])} | MQTT_RC={result.rc}")
+                # print(f"[Encrypted @ {topic}]: {json.dumps(envelope)}")
+                # print(f"[Decrypted]: {json.dumps(payload)}")
 
         except Exception as e:
             print(f"❌ Error: {e}")
 
-        time.sleep(2)
+        time.sleep(2)  # change to 60 for once-per-minute
 
 
 if __name__ == "__main__":
