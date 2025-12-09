@@ -9,7 +9,7 @@ from Crypto.Cipher import AES
 from Crypto.Random import get_random_bytes
 
 # ─── MQTT Config ─────────────────────────────────────────────────────
-MQTT_BROKER = "broker.enwise.in"
+MQTT_BROKER = "116.50.93.126"
 MQTT_PORT = 1883
 
 # ─── Timezone ───────────────────────────────────────────────────────
@@ -133,7 +133,7 @@ def main():
         except Exception as e:
             print(f"❌ Error: {e}")
 
-        time.sleep(2)  # change to 60 for once-per-minute
+        time.sleep(60)  # change to 60 for once-per-minute
 
 
 if __name__ == "__main__":
