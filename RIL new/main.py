@@ -20,10 +20,9 @@ from app.api.site_dashboard.getCameras import router as dashCamRouter
 from app.api.site_dashboard.avg_report import router as avgReport
 from app.api.site_dashboard.site_report import router as siteReportRouter
 from app.api.site.siteStatus import router as siteStatusRouter
-from app.api.reportgenerator.offline_report import router as offlinereportRouter
 from app.api.site.stations_parameters import router as siteStationParameterRouter
-from app.api.reportgenerator.offline_report import router as offlinereportRouter
-from app.api.reportgenerator.offlineworking_report import router as offlineworkingreportRouter
+# from app.api.reportgenerator.offline_report import router as offlinereportRouter
+# from app.api.reportgenerator.offlineworking_report import router as offlineworkingreportRouter
 from app.api.camera.cameraParameter import router as camParaRouter
 from app.api.site.siteMapView import router as mapviewRouter
 from app.api.superadmin.supradmin import router as suprAdminRouter
@@ -31,11 +30,11 @@ from app.api.reportgenerator.para_offline_report import router as paraOfflineRep
 from app.api.reportgenerator.raw_data_api import router as rawdataReport
 from app.api.reportgenerator.raw_data import router as rawdataExportReport
 from app.api.document_type.documentTypeCRUD import router as documentTypeRouter
-from app.api.reportgenerator.graph_report import router as graphreportRouter
+# from app.api.reportgenerator.graph_report import router as graphreportRouter
 from app.api.reportgenerator.data_availability import router as dataAvleportRouter
-from app.api.ptz.ptzControl import router as ptzControlRouter
-from app.api.waterBalance.waterBalance import router as waterBalanceRouter
-from app.api.station_formula.station_formula import router as stationFormulaRouter
+# from app.api.ptz.ptzControl import router as ptzControlRouter
+# from app.api.waterBalance.waterBalance import router as waterBalanceRouter
+# from app.api.station_formula.station_formula import router as stationFormulaRouter
 from app.api.parameter.alerts_api import router as alertRouter
 from app.api.stationCalibration.station_calibration import router as stationCalibrationRouter
 from fastapi.staticfiles import StaticFiles
@@ -54,7 +53,6 @@ def include_routers(app):
     app.include_router(suprAdminRouter)
     app.include_router(mapviewRouter)
     app.include_router(camParaRouter)
-    app.include_router(offlinereportRouter)
     app.include_router(siteStationParameterRouter)
     app.include_router(siteStatusRouter)
     app.include_router(siteReportRouter)
@@ -77,13 +75,8 @@ def include_routers(app):
     app.include_router(deviceRouter)
     app.include_router(cameraRouter)
     app.include_router(roleRouter)
-    app.include_router(offlineworkingreportRouter)
     app.include_router(rawdataReport)
     app.include_router(rawdataExportReport)
-    # app.include_router(ptzControlRouter)
-    app.include_router(waterBalanceRouter)
-    app.include_router(graphreportRouter)
-    app.include_router(stationFormulaRouter)
     app.include_router(alertRouter)
     app.include_router(avgReport)
     app.include_router(dataAvleportRouter)
